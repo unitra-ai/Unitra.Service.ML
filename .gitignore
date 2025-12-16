@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+
+# Modal
+.modal/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Model cache
+models/
+*.onnx
+*.pt
+*.bin
