@@ -113,13 +113,13 @@ def validate_language(code: str) -> str:
 
 @app.cls(
     image=image,
-    gpu=modal.gpu.A10G(),
+    gpu="A10G",
     volumes={"/models": volume},
-    container_idle_timeout=300,  # 5 minutes
-    allow_concurrent_inputs=16,
+    scaledown_window=300,  # 5 minutes
     retries=2,
     timeout=120,
 )
+@modal.concurrent(max_inputs=16)
 class MTService:
     """Machine translation service using MADLAD-400-3B model.
 
@@ -468,7 +468,7 @@ class MTService:
 
 # HTTP Web Endpoint for external access
 @app.function(image=image)
-@modal.web_endpoint(method="POST", docs=True)
+@modal.fastapi_endpoint(method="POST", docs=True)
 def translate(request: dict[str, Any]) -> dict[str, Any]:
     """HTTP endpoint for translation.
 
@@ -507,7 +507,7 @@ def translate(request: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.function(image=image)
-@modal.web_endpoint(method="GET", docs=True)
+@modal.fastapi_endpoint(method="GET", docs=True)
 def health() -> dict[str, Any]:
     """HTTP endpoint for health check."""
     service = MTService()
