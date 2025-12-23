@@ -1,0 +1,10 @@
+[app]
+name = "unitra-mt"
+
+[settings]
+default_region = "us-east"
+
+# Secrets can be created with:
+# modal secret create unitra-mt-secrets \
+#   HUGGINGFACE_TOKEN=hf_xxx \
+#   SENTRY_DSN=https://xxx@sentry.io/xxx

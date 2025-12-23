@@ -144,11 +144,25 @@ class TestValidateLanguage:
             validate_language("")
         assert "cannot be empty" in str(exc_info.value)
 
-    def test_unsupported_raises_error(self):
-        """Should raise ValueError for unsupported language."""
+    def test_invalid_format_raises_error(self):
+        """Should raise ValueError for invalid format."""
         with pytest.raises(ValueError) as exc_info:
-            validate_language("xyz")
+            validate_language("xyz123")
+        assert "Invalid language code format" in str(exc_info.value)
+
+    def test_strict_mode_rejects_unknown(self):
+        """In strict mode, should reject non-priority languages."""
+        # "af" (Afrikaans) is valid format but not in priority list
+        with pytest.raises(ValueError) as exc_info:
+            validate_language("af", strict=True)
         assert "Unsupported language" in str(exc_info.value)
+
+    def test_permissive_mode_accepts_valid_format(self):
+        """In permissive mode, should accept any valid 2-3 letter code."""
+        # These are valid language codes not in our priority list
+        assert validate_language("af") == "af"  # Afrikaans
+        assert validate_language("eu") == "eu"  # Basque
+        assert validate_language("ca") == "ca"  # Catalan
 
 
 class TestPriorityLanguages:

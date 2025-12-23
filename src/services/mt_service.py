@@ -32,6 +32,7 @@ image = (
         "sentencepiece",
         "accelerate",
         "safetensors",
+        "optimum",
     )
     .env({"HF_HOME": "/models/huggingface"})
 )
@@ -74,7 +75,7 @@ class HealthCheckResult:
     warm: bool
 
 
-# Supported languages (subset for validation)
+# Priority languages (commonly used, validated)
 PRIORITY_LANGUAGES = {
     "en", "zh", "ja", "ko", "es", "fr", "de", "ru", "pt", "ar",
     "vi", "th", "id", "tr", "pl", "it", "nl", "sv", "cs", "uk",
@@ -101,13 +102,34 @@ def normalize_language(code: str) -> str:
     return code
 
 
-def validate_language(code: str) -> str:
-    """Validate and normalize a language code."""
+def validate_language(code: str, strict: bool = False) -> str:
+    """Validate and normalize a language code.
+
+    MADLAD-400 supports 400+ languages. By default, we accept any valid
+    2-3 letter language code. Set strict=True to only allow priority languages.
+
+    Args:
+        code: Language code to validate
+        strict: If True, only allow priority languages
+
+    Returns:
+        Normalized language code
+
+    Raises:
+        ValueError: If code is empty or (in strict mode) unsupported
+    """
     if not code:
         raise ValueError("Language code cannot be empty")
     normalized = normalize_language(code)
-    if normalized not in PRIORITY_LANGUAGES:
+
+    # Basic format validation (2-3 letter codes)
+    if not (2 <= len(normalized) <= 3) or not normalized.isalpha():
+        raise ValueError(f"Invalid language code format: {code}")
+
+    # In strict mode, only allow priority languages
+    if strict and normalized not in PRIORITY_LANGUAGES:
         raise ValueError(f"Unsupported language: {code}")
+
     return normalized
 
 
