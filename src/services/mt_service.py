@@ -27,12 +27,14 @@ volume = modal.Volume.from_name("unitra-models", create_if_missing=True)
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
+        "numpy<2",
         "torch==2.1.0",
         "transformers==4.36.0",
         "sentencepiece",
         "accelerate",
         "safetensors",
         "optimum",
+        "fastapi[standard]",
     )
     .env({"HF_HOME": "/models/huggingface"})
 )
@@ -137,7 +139,7 @@ def validate_language(code: str, strict: bool = False) -> str:
     image=image,
     gpu="A10G",
     volumes={"/models": volume},
-    scaledown_window=300,  # 5 minutes
+    scaledown_window=30,  # 30 seconds - quick shutdown to save costs
     retries=2,
     timeout=120,
 )
