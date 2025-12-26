@@ -1,0 +1,188 @@
+# Deploy ML Service to Modal.com
+#
+# Automatically deploys to Modal when:
+# - Push to main branch (src/, scripts/, or config changes)
+# - Manual trigger via workflow_dispatch
+#
+# Required Secrets:
+# - MODAL_TOKEN_ID: Modal authentication token ID
+# - MODAL_TOKEN_SECRET: Modal authentication token secret
+# - ML_API_KEY: API key for authenticating requests to the ML service
+#
+# The ML_API_KEY is stored as a Modal secret and required by the API service
+# to call the ML endpoints. This prevents unauthorized access.
+#
+name: Deploy to Modal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'modal.toml'
+      - 'pyproject.toml'
+  workflow_dispatch:
+    inputs:
+      download_model:
+        description: 'Download and cache model (first deploy only, ~1 hour)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ============================================
+  # Stage 1: Test
+  # ============================================
+  test:
+    name: Test
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install modal pytest pytest-asyncio
+
+      - name: Run unit tests
+        run: |
+          pytest tests/ -v \
+            --ignore=tests/test_integration.py \
+            --ignore=tests/test_performance.py \
+            -x
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+
+  # ============================================
+  # Stage 2: Deploy to Modal
+  # ============================================
+  deploy:
+    name: Deploy to Modal
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    needs: test
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Modal CLI
+        run: pip install modal
+
+      - name: Authenticate with Modal
+        run: |
+          modal token set \
+            --token-id ${{ secrets.MODAL_TOKEN_ID }} \
+            --token-secret ${{ secrets.MODAL_TOKEN_SECRET }}
+          echo "Modal authentication successful"
+
+      - name: Create/Update API Key Secret
+        run: |
+          echo "Creating Modal secret for API authentication..."
+          # Create or update the API key secret
+          modal secret create unitra-api-key \
+            API_KEY=${{ secrets.ML_API_KEY }} \
+            --force 2>/dev/null || \
+          modal secret create unitra-api-key \
+            API_KEY=${{ secrets.ML_API_KEY }}
+          echo "API key secret configured"
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+
+      - name: Download model (if requested)
+        if: github.event.inputs.download_model == 'true'
+        run: |
+          echo "Downloading model to Modal persistent volume..."
+          echo "This may take up to 1 hour for first-time download..."
+          modal run scripts/download_model.py
+          echo "Model download complete"
+        timeout-minutes: 90
+
+      - name: Deploy to Modal
+        run: |
+          echo "Deploying MT service to Modal..."
+          modal deploy src/services/mt_service.py
+          echo "Deployment complete"
+
+      - name: Verify deployment
+        run: |
+          echo "Verifying deployment with authenticated request..."
+          sleep 15
+
+          # Test health endpoint with API key
+          HEALTH_URL="https://${{ vars.MODAL_USERNAME || 'nikmomo' }}--unitra-mt-health.modal.run"
+
+          for i in {1..5}; do
+            RESPONSE=$(curl -sf "$HEALTH_URL" \
+              -H "X-API-Key: ${{ secrets.ML_API_KEY }}" \
+              2>/dev/null || echo "")
+            if [ -n "$RESPONSE" ]; then
+              echo "Health check passed!"
+              echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
+              exit 0
+            fi
+            echo "Attempt $i/5 failed, retrying in 15s..."
+            sleep 15
+          done
+
+          echo "::warning::Health check timed out (cold start may take longer)"
+        continue-on-error: true
+
+      - name: Test translation endpoint
+        run: |
+          echo "Testing translation endpoint..."
+          TRANSLATE_URL="https://${{ vars.MODAL_USERNAME || 'nikmomo' }}--unitra-mt-translate.modal.run"
+
+          RESPONSE=$(curl -sf -X POST "$TRANSLATE_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: ${{ secrets.ML_API_KEY }}" \
+            -d '{"text": "Hello", "source_lang": "en", "target_lang": "zh"}' \
+            --max-time 120 \
+            2>/dev/null || echo "")
+
+          if [ -n "$RESPONSE" ]; then
+            echo "Translation test passed!"
+            echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
+          else
+            echo "::warning::Translation test timed out (may need warm-up)"
+          fi
+        continue-on-error: true
+
+      - name: Deployment summary
+        run: |
+          echo "## Modal Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Endpoints (require X-API-Key header)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | URL |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| Translation | \`POST https://${{ vars.MODAL_USERNAME || 'nikmomo' }}--unitra-mt-translate.modal.run\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Health | \`GET https://${{ vars.MODAL_USERNAME || 'nikmomo' }}--unitra-mt-health.modal.run\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scaledown:** 30 seconds" >> $GITHUB_STEP_SUMMARY
+          echo "- **GPU:** A10G" >> $GITHUB_STEP_SUMMARY
+          echo "- **Concurrent requests:** 16" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### API Service Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "Set these environment variables in Service.API:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "ML_SERVICE_URL=https://${{ vars.MODAL_USERNAME || 'nikmomo' }}--unitra-mt-translate.modal.run" >> $GITHUB_STEP_SUMMARY
+          echo "ML_API_KEY=<same as ML_API_KEY secret>" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

@@ -9,16 +9,27 @@ Features:
 - Model caching via persistent volume
 - Health monitoring
 - Concurrent request handling
+- API Key authentication (only API service can access)
+
+Security:
+- All endpoints require X-API-Key header
+- API key is stored in Modal secrets
+- Only the API service should know the key
 """
 
+import os
 import time
 from dataclasses import dataclass
 from typing import Any
 
 import modal
+from fastapi import Header, HTTPException
 
 # Modal app configuration
 app = modal.App("unitra-mt")
+
+# API Key secret for authentication
+api_key_secret = modal.Secret.from_name("unitra-api-key", required_keys=["API_KEY"])
 
 # Persistent volume for model caching
 volume = modal.Volume.from_name("unitra-models", create_if_missing=True)
@@ -490,11 +501,46 @@ class MTService:
             }
 
 
-# HTTP Web Endpoint for external access
-@app.function(image=image)
+# Authentication helper
+def verify_api_key(x_api_key: str = Header(None, alias="X-API-Key")) -> str:
+    """Verify API key from header.
+
+    Args:
+        x_api_key: API key from X-API-Key header
+
+    Returns:
+        The verified API key
+
+    Raises:
+        HTTPException: If API key is missing or invalid
+    """
+    expected_key = os.environ.get("API_KEY")
+    if not expected_key:
+        # If no API key is configured, allow access (development mode)
+        return "development"
+
+    if not x_api_key:
+        raise HTTPException(status_code=401, detail="Missing X-API-Key header")
+
+    if x_api_key != expected_key:
+        raise HTTPException(status_code=403, detail="Invalid API key")
+
+    return x_api_key
+
+
+# HTTP Web Endpoint for external access (authenticated)
+@app.function(image=image, secrets=[api_key_secret])
 @modal.fastapi_endpoint(method="POST", docs=True)
-def translate(request: dict[str, Any]) -> dict[str, Any]:
+def translate(
+    request: dict[str, Any],
+    x_api_key: str = Header(None, alias="X-API-Key"),
+) -> dict[str, Any]:
     """HTTP endpoint for translation.
+
+    Requires X-API-Key header for authentication.
+
+    Request headers:
+        X-API-Key: Your API key
 
     Request body:
         {
@@ -513,6 +559,9 @@ def translate(request: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Translation result with metadata
     """
+    # Verify API key
+    verify_api_key(x_api_key)
+
     service = MTService()
 
     # Check if batch request
@@ -530,10 +579,22 @@ def translate(request: dict[str, Any]) -> dict[str, Any]:
         )
 
 
-@app.function(image=image)
+@app.function(image=image, secrets=[api_key_secret])
 @modal.fastapi_endpoint(method="GET", docs=True)
-def health() -> dict[str, Any]:
-    """HTTP endpoint for health check."""
+def health(x_api_key: str = Header(None, alias="X-API-Key")) -> dict[str, Any]:
+    """HTTP endpoint for health check.
+
+    Requires X-API-Key header for authentication.
+
+    Request headers:
+        X-API-Key: Your API key
+
+    Returns:
+        Health status of the service
+    """
+    # Verify API key
+    verify_api_key(x_api_key)
+
     service = MTService()
     return service.health_check.remote()
 
