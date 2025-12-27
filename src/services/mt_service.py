@@ -530,7 +530,7 @@ def verify_api_key(x_api_key: str = Header(None, alias="X-API-Key")) -> str:
 
 # HTTP Web Endpoint for external access (authenticated)
 @app.function(image=image, secrets=[api_key_secret])
-@modal.fastapi_endpoint(method="POST", docs=True)
+@modal.web_endpoint(method="POST", docs=True)
 def translate(
     request: dict[str, Any],
     x_api_key: str = Header(None, alias="X-API-Key"),
@@ -580,7 +580,7 @@ def translate(
 
 
 @app.function(image=image, secrets=[api_key_secret])
-@modal.fastapi_endpoint(method="GET", docs=True)
+@modal.web_endpoint(method="GET", docs=True)
 def health(x_api_key: str = Header(None, alias="X-API-Key")) -> dict[str, Any]:
     """HTTP endpoint for health check.
 
