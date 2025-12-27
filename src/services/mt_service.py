@@ -153,8 +153,8 @@ def validate_language(code: str, strict: bool = False) -> str:
     container_idle_timeout=30,  # 30 seconds - quick shutdown to save costs
     retries=2,
     timeout=120,
+    allow_concurrent_inputs=16,
 )
-@modal.concurrent(max_inputs=16)
 class MTService:
     """Machine translation service using MADLAD-400-3B model.
 
