@@ -81,8 +81,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install Modal CLI
-        run: pip install modal
+      - name: Install Modal CLI and dependencies
+        run: |
+          pip install --upgrade pip poetry
+          pip install modal
+          poetry install --only main
 
       - name: Authenticate with Modal
         run: |
