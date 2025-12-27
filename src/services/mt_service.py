@@ -150,7 +150,7 @@ def validate_language(code: str, strict: bool = False) -> str:
     image=image,
     gpu="A10G",
     volumes={"/models": volume},
-    scaledown_window=30,  # 30 seconds - quick shutdown to save costs
+    container_idle_timeout=30,  # 30 seconds - quick shutdown to save costs
     retries=2,
     timeout=120,
 )
