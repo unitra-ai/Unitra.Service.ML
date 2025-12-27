@@ -120,7 +120,7 @@ jobs:
       - name: Deploy to Modal
         run: |
           echo "Deploying MT service to Modal..."
-          modal deploy src/services/mt_service.py
+          poetry run modal deploy src/services/mt_service.py
           echo "Deployment complete"
 
       - name: Verify deployment
