@@ -51,7 +51,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install modal pytest pytest-asyncio
+          pip install poetry
+          poetry install --with dev
 
       - name: Run unit tests
         run: |
